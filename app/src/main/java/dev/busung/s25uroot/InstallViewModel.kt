@@ -1263,7 +1263,8 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 // Offline mode is what makes a run possible with no network at all, so it resolves
                 // nothing: the cached payload already names its target, and asking the catalog would
                 // be the very thing this mode exists to avoid.
-                val offline = payloadOffline || AppPreferences.payloadMode(app) == PayloadMode.Offline
+                val offline = (payloadOffline || AppPreferences.payloadMode(app) == PayloadMode.Offline) &&
+                    LocalPayload.file(app) == null && LocalSuPayload.file(app) == null
                 // Read once and used twice: resolving an attempt hashes the files it verifies, which is
                 // not work to do again a few lines later.
                 val retriedPayload = if (offline && preferAttemptedPayload) {

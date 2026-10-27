@@ -355,6 +355,19 @@ internal object UniversalRootRun {
         /** What a person has to know about this choice before it is used, or null when there is nothing. */
         abstract val caveat: String?
 
+        /** A user-selected daemon paired with the chain compiled into the app. */
+        class Local(
+            override val flavor: KernelSuFlavor,
+            override val tier: PayloadTier,
+            file: File,
+            name: String,
+        ) : Plan() {
+            override val version: String? = null
+            override val artifact: RemoteArtifact = localArtifact(file)
+            override val description: String = "custom SU payload: $name (${flavor.label})"
+            override val caveat: String? = null
+        }
+
         /** The feed's entry for this phone: a module built for the kernel release it runs. */
         class Device(val profile: TargetProfile) : Plan() {
             override val flavor: KernelSuFlavor get() = profile.flavor
@@ -469,6 +482,9 @@ internal object UniversalRootRun {
     }
 
     internal fun plan(context: Context, flavor: KernelSuFlavor, tier: PayloadTier): Plan {
+        LocalSuPayload.file(context)?.let { file ->
+            return Plan.Local(flavor, tier, file, LocalSuPayload.displayName(context).orEmpty())
+        }
         val repository = PayloadRepository(context)
         val snapshot = DeviceSnapshot.current()
         if (tier == PayloadTier.Device) {
@@ -524,6 +540,7 @@ internal object UniversalRootRun {
      *   and the sentence names which of the three it is.
      */
     internal fun bootPlan(context: Context, flavor: KernelSuFlavor, tier: PayloadTier): Plan {
+        if (LocalSuPayload.file(context) != null) return plan(context, flavor, tier)
         val remembered = UniversalDaemonStore.describe(context) ?: return plan(context, flavor, tier)
         universalCacheRefusalReason(remembered, flavor, tier, daemonPath(context))?.let { reason ->
             throw IllegalStateException("No staged payload: $reason")
@@ -591,7 +608,13 @@ internal object UniversalRootRun {
         // Recorded so the next boot can stage this same daemon without a feed. After the rename, so a record can
         // never name a file a killed run left half-written, and only from a plan that came from a source - this
         // branch - so the record can only ever describe bytes the enabled sources published.
-        UniversalDaemonStore.publish(context, plan, destination)
+        if (plan !is Plan.Local && fileMatchesArtifact(destination, plan.artifact)) {
+            UniversalDaemonStore.publish(context, plan, destination)
+        } else {
+            // An imported daemon has no feed verification record. Do not label it with the source's
+            // digest or leave an older boot record pointing at the file we just replaced.
+            UniversalDaemonStore.clear(context)
+        }
         return destination
     }
 

@@ -6,6 +6,13 @@ import android.provider.OpenableColumns
 import java.io.File
 import java.io.FileOutputStream
 
+/** Describes the imported bytes without inventing source metadata. */
+internal fun localArtifact(file: File) = RemoteArtifact(
+    url = Uri.fromFile(file).toString(),
+    size = file.length(),
+    sha256 = sha256Of(file),
+)
+
 /**
  * A payload the user imported from the device instead of the one a source provides, for testing a
  * payload on a device the feed does not cover yet.
@@ -17,20 +24,29 @@ import java.io.FileOutputStream
  * an ELF header and a rejected file leaves the previously imported one in place, so importing
  * cannot leave the next run without an exploit.
  */
-object LocalPayload {
-    private const val DIRECTORY = "local-payload"
-    private const val FILE_NAME = "local-exploit.so"
-    private const val PART_SUFFIX = ".part"
+object LocalPayload : ImportedPayloadStore("local-payload", "local-exploit.so", "local_payload_name", true) {
     const val MAX_BYTES = 16L * 1024 * 1024
+}
+
+/** A separately stored SU daemon; executable ELF files do not need a .so extension. */
+object LocalSuPayload : ImportedPayloadStore("local-su-payload", "local-ksud", "local_su_payload_name", false)
+
+open class ImportedPayloadStore internal constructor(
+    private val directoryName: String,
+    private val fileName: String,
+    private val preferenceKey: String,
+    private val requireSoExtension: Boolean,
+) {
+    private val PART_SUFFIX = ".part"
     private val ELF_MAGIC = byteArrayOf(0x7f, 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte())
 
     /** The imported payload, or null when none is set or the stored file is unusable. */
-    fun file(context: Context): File? = File(directory(context), FILE_NAME)
+    fun file(context: Context): File? = File(directory(context), fileName)
         .takeIf { it.isFile && it.length() > 0L }
 
     /** The name the picker reported, for the UI; falls back to the stored file name. */
     fun displayName(context: Context): String? = file(context)?.let { stored ->
-        AppPreferences.localPayloadName(context) ?: stored.name
+        AppPreferences.importedPayloadName(context, preferenceKey) ?: stored.name
     }
 
     /**
@@ -38,10 +54,10 @@ object LocalPayload {
      * message when the file is unusable; the stored payload is only replaced by a completed copy.
      */
     fun import(context: Context, uri: Uri): String {
-        val name = queryDisplayName(context, uri) ?: FILE_NAME
+        val name = queryDisplayName(context, uri) ?: fileName
         require(isAcceptedName(name)) { context.getString(R.string.local_payload_not_so) }
-        val destination = File(directory(context).apply { mkdirs() }, FILE_NAME)
-        val temporary = File(destination.parentFile, "$FILE_NAME$PART_SUFFIX")
+        val destination = File(directory(context).apply { mkdirs() }, fileName)
+        val temporary = File(destination.parentFile, "$fileName$PART_SUFFIX")
         try {
             val total = copyInto(context, uri, temporary)
             require(total > 0L && startsWithElfMagic(temporary)) {
@@ -54,7 +70,7 @@ object LocalPayload {
             temporary.delete()
             throw error
         }
-        AppPreferences.setLocalPayloadName(context, name)
+        AppPreferences.setImportedPayloadName(context, preferenceKey, name)
         return name
     }
 
@@ -83,9 +99,9 @@ object LocalPayload {
 
     fun clear(context: Context) {
         val directory = directory(context)
-        File(directory, FILE_NAME).delete()
-        File(directory, "$FILE_NAME$PART_SUFFIX").delete()
-        AppPreferences.setLocalPayloadName(context, null)
+        File(directory, fileName).delete()
+        File(directory, "$fileName$PART_SUFFIX").delete()
+        AppPreferences.setImportedPayloadName(context, preferenceKey, null)
     }
 
     private fun copyInto(context: Context, uri: Uri, temporary: File): Long {
@@ -116,7 +132,7 @@ object LocalPayload {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
             ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
 
-    private fun directory(context: Context) = File(context.filesDir, DIRECTORY)
+    private fun directory(context: Context) = File(context.filesDir, directoryName)
 
     /** Rename that refuses to nest: a directory named like the destination is not silently kept. */
     private fun File.renameToReplacing(destination: File): Boolean {
@@ -125,9 +141,10 @@ object LocalPayload {
     }
 
     /** The picker returns whatever name the provider reports, so the extension is checked. */
-    internal fun isAcceptedName(name: String): Boolean = name.endsWith(".so", ignoreCase = true)
+    internal fun isAcceptedName(name: String): Boolean =
+        !requireSoExtension || name.endsWith(".so", ignoreCase = true)
 
-    internal fun isWithinLimit(total: Long): Boolean = total <= MAX_BYTES
+    internal fun isWithinLimit(total: Long): Boolean = total <= LocalPayload.MAX_BYTES
 
     /** A payload that is not an ELF binary cannot be loaded at all, so it is refused up front. */
     internal fun isElf(header: ByteArray): Boolean =

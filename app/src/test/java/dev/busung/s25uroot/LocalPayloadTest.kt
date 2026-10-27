@@ -7,6 +7,16 @@ import org.junit.Test
 class LocalPayloadTest {
 
     @Test
+    fun suDaemonAcceptsExtensionlessNamesButStillRequiresElfAndSizeLimit() {
+        assertTrue(LocalSuPayload.isAcceptedName("ksud"))
+        assertTrue(LocalSuPayload.isAcceptedName("custom-su.bin"))
+        assertTrue(LocalSuPayload.isElf(elfHeader()))
+        assertFalse(LocalSuPayload.isElf("#!/bin/sh".toByteArray()))
+        assertTrue(LocalSuPayload.isWithinLimit(LocalPayload.MAX_BYTES))
+        assertFalse(LocalSuPayload.isWithinLimit(LocalPayload.MAX_BYTES + 1))
+    }
+
+    @Test
     fun acceptsSoNamesInAnyCase() {
         assertTrue(LocalPayload.isAcceptedName("cve-2026-43499-app.so"))
         assertTrue(LocalPayload.isAcceptedName("PAYLOAD.SO"))

@@ -885,7 +885,7 @@
     <string name="local_payload_none">Not set</string>
     <string name="local_payload_title">Local payload</string>
     <string name="local_payload_summary_none">No payload imported. Runs download the exploit from your sources.</string>
-    <string name="local_payload_summary_set">Runs use %1$s. KernelSU is still downloaded from the source for this phone.</string>
+    <string name="local_payload_summary_set">Runs use %1$s as the exploit. The SU daemon follows your Custom Su Payload setting.</string>
     <string name="local_payload_choose">Choose .so file</string>
     <string name="local_payload_replace">Replace file</string>
     <string name="local_payload_remove">Remove payload</string>
@@ -895,6 +895,14 @@
     <string name="local_payload_read_failed">Couldn\'t read the selected file</string>
     <string name="local_payload_missing">The imported payload is no longer in app storage. Import it again.</string>
     <string name="repo_using_local_payload">Using local payload: %1$s</string>
+    <string name="custom_su_payload">Custom Su Payload</string>
+    <string name="custom_payload_confirm_body">Run using the imported payload files?\n\n%1$s</string>
+    <string name="custom_su_payload_description">Use a SU daemon binary stored on this phone.</string>
+    <string name="custom_su_payload_description_set">Runs use the imported SU daemon and skip payload selection.</string>
+    <string name="custom_su_payload_summary_none">No SU payload imported. Choose a compatible ELF daemon binary (such as ksud). Downloads otherwise use the daemon from your sources. Offline runs use their saved payloads.</string>
+    <string name="custom_su_payload_summary_set">Runs use %1$s as the SU daemon and skip payload selection. Choose a binary compatible with this kernel and your configured KernelSU flavor. When no local exploit is set, the built-in exploit is used.</string>
+    <string name="custom_su_payload_choose">Choose SU file</string>
+    <string name="repo_using_local_su_payload">Using custom SU payload: %1$s</string>
     <string name="dfr_title">Root via Helper</string>
     <string name="dfr_description">Runs an APK as a system app, so root no longer needs the exploit.</string>
     <string name="dfr_summary">Installs the helper as a system app. Add the certificate first, then Reboot, then install: a system app is only accepted on a fresh boot.</string>

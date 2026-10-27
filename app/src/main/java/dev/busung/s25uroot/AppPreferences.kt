@@ -945,8 +945,15 @@ object AppPreferences {
         prefs(context).getString(LOCAL_PAYLOAD_NAME, null)
 
     fun setLocalPayloadName(context: Context, name: String?) {
+        setImportedPayloadName(context, LOCAL_PAYLOAD_NAME, name)
+    }
+
+    internal fun importedPayloadName(context: Context, key: String): String? =
+        prefs(context).getString(key, null)
+
+    internal fun setImportedPayloadName(context: Context, key: String, name: String?) {
         val editor = prefs(context).edit()
-        if (name == null) editor.remove(LOCAL_PAYLOAD_NAME) else editor.putString(LOCAL_PAYLOAD_NAME, name)
+        if (name == null) editor.remove(key) else editor.putString(key, name)
         editor.apply()
     }
 

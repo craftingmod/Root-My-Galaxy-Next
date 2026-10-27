@@ -1258,6 +1258,7 @@ private fun RootApp(
             onNext = { choice ->
                 showTargetPicker = false
                 when (choice) {
+                    is PayloadChoice.Custom -> confirming = choice
                     is PayloadChoice.Device -> {
                         val profile = choice.profile
                         selectedProfile = profile
@@ -1423,6 +1424,10 @@ private fun RootApp(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
                         when (pending) {
+                            is PayloadChoice.Custom -> stringResource(
+                                R.string.custom_payload_confirm_body,
+                                listOfNotNull(pending.exploitName, pending.suName).joinToString("\n"),
+                            )
                             is PayloadChoice.Device -> stringResource(R.string.install_confirm_body)
                             is PayloadChoice.Universal -> stringResource(
                                 R.string.universal_confirm_body,
@@ -1469,6 +1474,10 @@ private fun RootApp(
                             clickHaptic(view)
                             confirming = null
                             when (pending) {
+                                is PayloadChoice.Custom -> {
+                                    if (pending.exploitName != null) openInstaller(null)
+                                    else openUniversalRun(pending.flavor, PayloadTier.Generic)
+                                }
                                 is PayloadChoice.Device -> {
                                     openInstaller(pending.profile.selectionId)
                                     selectedProfile = null
@@ -1585,14 +1594,20 @@ private fun RootApp(
                                 showRebootSheet = true
                             },
                             resumeTick = resumeTick,
-                            // One press, one question: which payload this run spends. The picker is the
-                            // only way into a run, because the payload is the one thing about it a person
-                            // can still get wrong - and the confirmation that follows states the choice
-                            // rather than asking for it a second time.
+                            // Imported files already settle the choice. Read them on each press so a
+                            // change made in Settings takes effect without recreating the home page.
                             onInstall = {
                                 selectedProfile = null
-                                showTargetPicker = true
-                                installViewModel.loadTargetCatalog()
+                                val exploitName = LocalPayload.displayName(context)
+                                val suName = LocalSuPayload.displayName(context)
+                                if (exploitName != null || suName != null) {
+                                    confirming = PayloadChoice.Custom(
+                                        AppPreferences.kernelsuFlavor(context), exploitName, suName,
+                                    )
+                                } else {
+                                    showTargetPicker = true
+                                    installViewModel.loadTargetCatalog()
+                                }
                             },
                         )
                         AppPage.History -> HistoryPage(
@@ -4841,6 +4856,8 @@ private fun SettingsPage(
     }
     var showPayloadSourcesSheet by remember { mutableStateOf(false) }
     var showLocalPayloadDialog by remember { mutableStateOf(false) }
+    var showLocalSuPayloadDialog by remember { mutableStateOf(false) }
+    var localSuPayloadName by remember { mutableStateOf(LocalSuPayload.displayName(context)) }
     var showDfrInstall by remember { mutableStateOf(false) }
     var showRunPlanDialog by remember { mutableStateOf(false) }
     var localPayloadName by remember { mutableStateOf(LocalPayload.displayName(context)) }
@@ -4927,6 +4944,15 @@ private fun SettingsPage(
             initialName = localPayloadName,
             onDismiss = { showLocalPayloadDialog = false },
             onNameChanged = { name -> localPayloadName = name },
+        )
+    }
+
+    if (showLocalSuPayloadDialog) {
+        LocalPayloadDialog(
+            initialName = localSuPayloadName,
+            onDismiss = { showLocalSuPayloadDialog = false },
+            onNameChanged = { name -> localSuPayloadName = name },
+            suPayload = true,
         )
     }
 
@@ -5505,10 +5531,24 @@ private fun SettingsPage(
                         },
                     ),
                     value = localPayloadName ?: stringResource(R.string.local_payload_none),
-                    position = SettingsCardPosition.Bottom,
+                    position = SettingsCardPosition.Middle,
                     onClick = {
                         clickHaptic(view)
                         showLocalPayloadDialog = true
+                    },
+                )
+                SettingsCard(
+                    icon = Icons.Rounded.UploadFile,
+                    title = stringResource(R.string.custom_su_payload),
+                    description = stringResource(
+                        if (localSuPayloadName == null) R.string.custom_su_payload_description
+                        else R.string.custom_su_payload_description_set,
+                    ),
+                    value = localSuPayloadName ?: stringResource(R.string.local_payload_none),
+                    position = SettingsCardPosition.Bottom,
+                    onClick = {
+                        clickHaptic(view)
+                        showLocalSuPayloadDialog = true
                     },
                 )
             }
@@ -8601,14 +8641,16 @@ private fun LocalPayloadDialog(
     initialName: String?,
     onDismiss: () -> Unit,
     onNameChanged: (String?) -> Unit,
+    suPayload: Boolean = false,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
+    val store = if (suPayload) LocalSuPayload else LocalPayload
     var name by remember(initialName) { mutableStateOf(initialName) }
     var error by remember { mutableStateOf<String?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        runCatching { LocalPayload.import(context, uri) }
+        runCatching { store.import(context, uri) }
             .onSuccess { imported ->
                 name = imported
                 error = null
@@ -8625,7 +8667,7 @@ private fun LocalPayloadDialog(
         icon = { Icon(Icons.Rounded.UploadFile, contentDescription = null) },
         title = {
             DialogDimAmount(0.34f)
-            Text(stringResource(R.string.local_payload_title))
+            Text(stringResource(if (suPayload) R.string.custom_su_payload else R.string.local_payload_title))
         },
         text = {
             Column(
@@ -8636,9 +8678,16 @@ private fun LocalPayloadDialog(
             ) {
                 Text(
                     if (current == null) {
-                        stringResource(R.string.local_payload_summary_none)
+                        stringResource(
+                            if (suPayload) R.string.custom_su_payload_summary_none
+                            else R.string.local_payload_summary_none,
+                        )
                     } else {
-                        stringResource(R.string.local_payload_summary_set, current)
+                        stringResource(
+                            if (suPayload) R.string.custom_su_payload_summary_set
+                            else R.string.local_payload_summary_set,
+                            current,
+                        )
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -8662,7 +8711,7 @@ private fun LocalPayloadDialog(
                 listOfNotNull(
                     AppAction(
                         label = if (current == null) {
-                            R.string.local_payload_choose
+                            if (suPayload) R.string.custom_su_payload_choose else R.string.local_payload_choose
                         } else {
                             R.string.local_payload_replace
                         },
@@ -8682,7 +8731,7 @@ private fun LocalPayloadDialog(
                     if (current != null) {
                         AppAction(R.string.local_payload_remove, AppActionRole.Destructive) {
                             clickHaptic(view)
-                            LocalPayload.clear(context)
+                            store.clear(context)
                             name = null
                             error = null
                             onNameChanged(null)

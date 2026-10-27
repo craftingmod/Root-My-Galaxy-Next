@@ -245,6 +245,19 @@ class PayloadRepository(private val context: Context) {
      * says which entry to add. Which flavour was offered is on the profile, and the run reports it.
      */
     fun resolveTarget(snapshot: DeviceSnapshot): TargetProfile {
+        val localExploit = LocalPayload.file(context)
+        val localSu = LocalSuPayload.file(context)
+        if (localExploit != null && localSu != null) {
+            return TargetProfile(
+                profileId = "custom-local-payload",
+                displayName = LocalPayload.displayName(context).orEmpty(),
+                models = setOf(snapshot.model),
+                kernelVersions = setOf(snapshot.kernelRelease),
+                exploit = localArtifact(localExploit),
+                kernelSu = localArtifact(localSu),
+                flavor = AppPreferences.kernelsuFlavor(context),
+            ).also { rememberResolvedPayload(context, it) }
+        }
         val catalog = loadTargets()
         val resolved = catalog.resolveFor(snapshot, AppPreferences.kernelsuFlavor(context))
             ?: error(noProfileReason(snapshot, catalog))
@@ -383,7 +396,7 @@ class PayloadRepository(private val context: Context) {
             context.getString(R.string.artifact_exploit),
             onProgress,
         )
-        val kernelSu = downloadArtifact(
+        val kernelSu = importedDaemon(File(directory, "ksud-s25u-kdp"), onProgress) ?: downloadArtifact(
             profile.kernelSu,
             File(directory, "ksud-s25u-kdp"),
             // Named after the flavour, because the two daemons are different binaries from different
@@ -410,7 +423,7 @@ class PayloadRepository(private val context: Context) {
         onProgress: (String) -> Unit,
     ): File {
         val directory = File(context.filesDir, "payloads/universal-${sanitize(flavor.id)}").apply { mkdirs() }
-        val file = downloadArtifact(
+        val file = importedDaemon(File(directory, "ksud"), onProgress) ?: downloadArtifact(
             artifact,
             File(directory, "ksud"),
             context.getString(R.string.artifact_daemon, flavor.label),
@@ -496,9 +509,7 @@ class PayloadRepository(private val context: Context) {
     }
 
     /**
-     * Stages the imported payload in place of the downloaded exploit. KernelSU still comes from the
-     * source matched to this device, because nothing about importing an exploit changes which
-     * ksud this kernel needs.
+     * Stages the imported payload in place of the downloaded exploit.
      */
     private fun importedExploit(directory: File, onProgress: (String) -> Unit): File? {
         if (LocalPayload.file(context) == null) return null
@@ -509,6 +520,12 @@ class PayloadRepository(private val context: Context) {
             ),
         )
         return LocalPayload.stage(context, File(directory, "cve-2026-43499-app.so"))
+    }
+
+    private fun importedDaemon(destination: File, onProgress: (String) -> Unit): File? {
+        if (LocalSuPayload.file(context) == null) return null
+        onProgress(context.getString(R.string.repo_using_local_su_payload, LocalSuPayload.displayName(context).orEmpty()))
+        return LocalSuPayload.stage(context, destination)
     }
 
     private fun downloadArtifact(

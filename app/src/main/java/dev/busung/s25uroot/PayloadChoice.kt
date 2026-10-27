@@ -66,6 +66,17 @@ internal sealed interface PayloadChoice {
         override fun matchesQuery(query: String): Boolean = profile.matchesQuery(query)
     }
 
+    /** Imported files are already a choice; they do not need a catalog row. */
+    data class Custom(
+        override val flavor: KernelSuFlavor,
+        val exploitName: String?,
+        val suName: String?,
+    ) : PayloadChoice {
+        override val key: String get() = "custom"
+        override fun matchesQuery(query: String): Boolean =
+            listOfNotNull(exploitName, suName).any { it.contains(query, ignoreCase = true) }
+    }
+
     /**
      * The DirtyFrag chain with one flavour's daemon, in one of the two tiers.
      *
